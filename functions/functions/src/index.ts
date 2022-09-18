@@ -1,34 +1,37 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 
+import * as express from "express";
+
 admin.initializeApp();
 
-export const helloWorld = functions.https.onRequest((_, response) => {
+const app = express();
+
+app.get("/", (_, res) => {
     functions.logger.info("Hello logs!", { structuredData: true });
-    response.send("Hello world!");
+    res.send("Hello world!");
 });
 
-export const getScreams = functions.https.onRequest(async (_, res) => {
-    const data = await admin.firestore().collection("screams").get();
+app.get("/screams", async (_, res) => {
+    const data = await admin
+        .firestore()
+        .collection("screams")
+        .orderBy("createdAt", "desc")
+        .get();
     const screams: admin.firestore.DocumentData[] = [];
 
     data.forEach((doc) => {
-        screams.push(doc.data());
+        screams.push({ screamId: doc.id, ...doc.data() });
     });
 
     res.json({ screams });
 });
 
-export const createScream = functions.https.onRequest(async (req, res) => {
-    if (req.method !== "POST") {
-        res.status(400).json({ err: "Method not allowed" });
-        return;
-    }
-
+app.post("/scream", async (req, res) => {
     const newScream = {
         userHandle: req.body.userHandle,
         body: req.body.body,
-        createdAt: admin.firestore.Timestamp.fromDate(new Date())
+        createdAt: new Date().toISOString()
     };
 
     const newScreamData = await admin
@@ -40,3 +43,5 @@ export const createScream = functions.https.onRequest(async (req, res) => {
     functions.logger.log(msg);
     res.json({ msg });
 });
+
+export const api = functions.https.onRequest(app);
