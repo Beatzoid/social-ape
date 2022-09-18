@@ -28,6 +28,8 @@ module.exports = {
         indent: ["error", 4],
         "quote-props": ["error", "as-needed"],
         "comma-dangle": ["error", "never"],
-        "object-curly-spacing": ["error", "always"]
+        "object-curly-spacing": ["error", "always"],
+        "max-len": ["error", 120],
+        "@typescript-eslint/no-explicit-any": "off"
     }
 };
