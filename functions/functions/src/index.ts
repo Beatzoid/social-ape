@@ -1,11 +1,15 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import {
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword
+} from "firebase/auth";
 
 import * as express from "express";
 
 import { auth } from "./constants";
+import { validateSignup, validateLogin } from "./validators";
 
 admin.initializeApp();
 
@@ -13,7 +17,7 @@ const app = express();
 
 app.get("/", (_, res) => {
     functions.logger.info("Hello logs!", { structuredData: true });
-    res.send("Hello world!");
+    return res.send("Hello world!");
 });
 
 // SCREAMS
@@ -30,7 +34,7 @@ app.get("/screams", async (_, res) => {
         screams.push({ screamId: doc.id, ...doc.data() });
     });
 
-    res.json({ screams });
+    return res.json({ screams });
 });
 
 app.post("/scream", async (req, res) => {
@@ -47,10 +51,11 @@ app.post("/scream", async (req, res) => {
     const msg = `Successfully created scream with id ${newScreamData.id}`;
 
     functions.logger.log(msg);
-    res.json({ msg });
+    return res.json({ msg });
 });
 
 // USERS
+
 app.post("/signup", async (req, res) => {
     try {
         const newUser = {
@@ -59,6 +64,10 @@ app.post("/signup", async (req, res) => {
             password: req.body.password,
             confirmPassword: req.body.confirmPassword
         };
+
+        const errors = validateSignup(newUser);
+
+        if (Object.keys(errors).length > 0) return res.status(400).json(errors);
 
         // TODO: Validate data
         const existingUserDoc = await admin
@@ -93,12 +102,39 @@ app.post("/signup", async (req, res) => {
         functions.logger.log(
             `User ${newUserData.user.uid} successfully signed up with token ${userIdToken}`
         );
-        res.status(201).json({ userIdToken });
+        return res.status(201).json({ userIdToken });
     } catch (err: any) {
         if (err.code === "auth/email-already-in-use") {
-            res.status(400).json({ email: "Email already in use" });
+            return res.status(400).json({ email: "Email already in use" });
         } else {
-            res.status(500).json({ err: err.code });
+            return res.status(500).json({ err: err.code });
+        }
+    }
+});
+
+app.post("/login", async (req, res) => {
+    try {
+        const userCredentials = {
+            email: req.body.email,
+            password: req.body.password
+        };
+
+        const errors = validateLogin(userCredentials);
+
+        if (Object.keys(errors).length > 0) return res.status(400).json(errors);
+
+        const data = await signInWithEmailAndPassword(
+            auth,
+            userCredentials.email,
+            userCredentials.password
+        );
+        const token = await data.user.getIdToken();
+        return res.json({ token });
+    } catch (err: any) {
+        if (err.code === "auth/wrong-password") {
+            return res.status(403).json({ password: "Incorrect password" });
+        } else {
+            return res.status(500).json({ err: err.code });
         }
     }
 });

@@ -29,7 +29,7 @@ module.exports = {
         "quote-props": ["error", "as-needed"],
         "comma-dangle": ["error", "never"],
         "object-curly-spacing": ["error", "always"],
-        "max-len": ["error", 120],
+        "max-len": ["error", 130],
         "@typescript-eslint/no-explicit-any": "off"
     }
 };
