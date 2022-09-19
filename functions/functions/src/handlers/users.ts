@@ -1,6 +1,11 @@
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 
+import * as BusBoy from "busboy";
+import * as path from "path";
+import * as fs from "fs";
+import * as os from "os";
+
 import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword
@@ -47,7 +52,8 @@ export const signup = async (req: Request, res: Response) => {
             userId: newUserData.user.uid,
             handle: newUser.handle,
             email: newUser.email,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            imageUrl: `https://firebasestorage.googleapis.com/v0/b/${process.env.STORAGE_BUCKET}/o/noImg.png?alt=media`
         };
 
         await admin
@@ -93,4 +99,60 @@ export const login = async (req: Request, res: Response) => {
             return res.status(500).json({ err: err.code });
         }
     }
+};
+
+export const uploadUserImage = async (req: Request, res: Response) => {
+    const busboy = BusBoy({ headers: req.headers });
+    let imageToUpload: Record<string, string> = {};
+    let imageFileName: string;
+
+    await new Promise((resolve, reject) => {
+        busboy
+            .on("close", resolve)
+            .once("error", reject)
+            .on("file", (_, file, info) => {
+                const { filename, mimeType } = info;
+                if (mimeType !== "image/png" && mimeType !== "image/jpeg") {
+                    return res
+                        .status(400)
+                        .json({ err: "File type not allowed" });
+                }
+
+                const imageExtension =
+                    filename.split(".")[filename.split(".").length - 1];
+
+                imageFileName = `${Math.round(
+                    Math.random() * 1000000000000000
+                )}.${imageExtension}`;
+
+                const filePath = path.join(os.tmpdir(), imageFileName);
+
+                imageToUpload = { filePath, mimeType };
+                file.pipe(fs.createWriteStream(filePath));
+                return;
+            })
+            .on("finish", async () => {
+                await admin
+                    .storage()
+                    .bucket()
+                    .upload(imageToUpload.filePath, {
+                        resumable: false,
+                        metadata: {
+                            metadata: { contentType: imageToUpload.mimeType }
+                        }
+                    });
+
+                // eslint-disable-next-line max-len
+                const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.STORAGE_BUCKET}/o/${imageFileName}?alt=media`;
+                await admin
+                    .firestore()
+                    .doc(`/users/${req.user.handle}`)
+                    .update({ imageUrl });
+
+                return res.json({ msg: "Successfully uploaded image" });
+            })
+            .end(req.body);
+    });
+
+    return res.status(200);
 };
