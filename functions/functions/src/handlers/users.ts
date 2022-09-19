@@ -15,7 +15,11 @@ import { auth } from "../constants";
 
 import { Request, Response } from "express";
 
-import { validateLogin, validateSignup } from "../utils/validators";
+import {
+    validateLogin,
+    validateSignup,
+    reduceUserDetails
+} from "../utils/validators";
 
 export const signup = async (req: Request, res: Response) => {
     try {
@@ -118,6 +122,7 @@ export const uploadUserImage = async (req: Request, res: Response) => {
                         .json({ err: "File type not allowed" });
                 }
 
+                // my.image.png => .png
                 const imageExtension =
                     filename.split(".")[filename.split(".").length - 1];
 
@@ -155,4 +160,38 @@ export const uploadUserImage = async (req: Request, res: Response) => {
     });
 
     return res.status(200);
+};
+
+export const addUserDetails = async (req: Request, res: Response) => {
+    const userDetails = reduceUserDetails(req.body);
+
+    if (Object.keys(userDetails).length === 0) {
+        return res.json({ msg: "Updated successfully" });
+    }
+
+    await admin.firestore().doc(`users/${req.user.handle}`).update(userDetails);
+    return res.json({ msg: "Updated successfully" });
+};
+
+export const getAuthenticatedUser = async (req: Request, res: Response) => {
+    const doc = await admin.firestore().doc(`/users/${req.user.handle}`).get();
+
+    if (doc.exists) {
+        const userData: Record<string, any> = {
+            credentials: doc.data(),
+            likes: []
+        };
+
+        const likes = await admin
+            .firestore()
+            .collection("likes")
+            .where("userHandle", "==", req.user.handle)
+            .get();
+
+        likes.forEach((doc) => {
+            userData.likes.push(doc.data());
+        });
+
+        return res.json(userData);
+    }
 };

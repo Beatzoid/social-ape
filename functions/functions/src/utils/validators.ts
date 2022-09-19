@@ -39,3 +39,20 @@ export const validateLogin = (userCredentials: Record<string, string>) => {
 
     return errors;
 };
+
+export const reduceUserDetails = (data: any) => {
+    const userDetails: Record<string, string> = {};
+
+    if (!isEmpty(data.bio)) userDetails.bio = data.bio;
+    if (!isEmpty(data.website)) {
+        if (data.website.trim().substring(0, 4) !== "http") {
+            userDetails.website = `http://${data.website.trim()}`;
+        } else {
+            userDetails.website = data.website;
+        }
+    }
+
+    if (!isEmpty(data.location)) userDetails.location = data.location;
+
+    return userDetails;
+};
