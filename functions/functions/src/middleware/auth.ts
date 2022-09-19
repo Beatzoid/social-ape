@@ -27,7 +27,9 @@ export const firebaseAuth = async (
             .where("userId", "==", req.user.uid)
             .limit(1)
             .get();
+
         req.user.handle = userData.docs[0].data().handle;
+        req.user.imageURL = userData.docs[0].data().imageUrl;
         return next();
     } catch (err: any) {
         return res.status(400).json({ err });

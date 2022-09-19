@@ -194,4 +194,6 @@ export const getAuthenticatedUser = async (req: Request, res: Response) => {
 
         return res.json(userData);
     }
+
+    return res.json(400).json({ err: "User not found" });
 };
