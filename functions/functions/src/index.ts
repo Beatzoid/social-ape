@@ -9,7 +9,10 @@ import {
 import * as express from "express";
 
 import { auth } from "./constants";
+
 import { validateSignup, validateLogin } from "./validators";
+
+import { firebaseAuth } from "./middleware/auth";
 
 admin.initializeApp();
 
@@ -37,9 +40,9 @@ app.get("/screams", async (_, res) => {
     return res.json({ screams });
 });
 
-app.post("/scream", async (req, res) => {
+app.post("/scream", firebaseAuth, async (req, res) => {
     const newScream = {
-        userHandle: req.body.userHandle,
+        userHandle: req.user.handle,
         body: req.body.body,
         createdAt: new Date().toISOString()
     };
