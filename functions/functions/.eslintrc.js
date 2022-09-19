@@ -30,6 +30,7 @@ module.exports = {
         "comma-dangle": ["error", "never"],
         "object-curly-spacing": ["error", "always"],
         "max-len": ["error", 130],
-        "@typescript-eslint/no-explicit-any": "off"
+        "@typescript-eslint/no-explicit-any": "off",
+        "new-cap": "off"
     }
 };
