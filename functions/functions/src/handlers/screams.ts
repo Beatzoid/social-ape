@@ -23,6 +23,9 @@ export const createScream = async (req: Request, res: Response) => {
     const newScream = {
         userHandle: req.user.handle,
         body: req.body.body,
+        userImage: req.user.imageURL,
+        likeCount: 0,
+        commentCount: 0,
         createdAt: new Date().toISOString()
     };
 
@@ -30,10 +33,14 @@ export const createScream = async (req: Request, res: Response) => {
         .firestore()
         .collection("screams")
         .add(newScream);
-    const msg = `Successfully created scream with id ${newScreamData.id}`;
 
-    functions.logger.log(msg);
-    return res.json({ msg });
+    const resScream: any = { ...newScream };
+    resScream.screamId = newScreamData.id;
+
+    functions.logger.log(
+        `Successfully created scream with id ${newScreamData.id}`
+    );
+    return res.json(resScream);
 };
 
 export const getScream = async (req: Request, res: Response) => {
@@ -86,7 +93,96 @@ export const createComment = async (req: Request, res: Response) => {
         return res.status(404).json({ err: "Scream not found" });
     }
 
+    await scream.ref.update({ commentCount: scream.data()?.commentCount + 1 });
     await admin.firestore().collection("comments").add(newComment);
 
     return res.json({ msg: "Successfully commented" });
+};
+
+export const likeScream = async (req: Request, res: Response) => {
+    const likeDoc = await admin
+        .firestore()
+        .collection("likes")
+        .where("userHandle", "==", req.user.handle)
+        .where("screamId", "==", req.params.screamId)
+        .limit(1)
+        .get();
+
+    const screamDoc = await admin
+        .firestore()
+        .doc(`/screams/${req.params.screamId}`)
+        .get();
+    const screamData: any = screamDoc.data();
+
+    if (!screamDoc.exists) {
+        return res.status(404).json({ err: "Scream not found" });
+    }
+
+    if (likeDoc.empty) {
+        await admin.firestore().collection("likes").add({
+            screamId: req.params.screamId,
+            userHandle: req.user.handle
+        });
+        screamData.likeCount++;
+        await admin
+            .firestore()
+            .doc(`/screams/${req.params.screamId}`)
+            .update({ likeCount: screamData.likeCount });
+
+        return res.json(screamData);
+    } else {
+        return res.status(400).json({ err: "Scream already liked" });
+    }
+};
+
+export const unlikeScream = async (req: Request, res: Response) => {
+    const likeDoc = await admin
+        .firestore()
+        .collection("likes")
+        .where("userHandle", "==", req.user.handle)
+        .where("screamId", "==", req.params.screamId)
+        .limit(1)
+        .get();
+
+    const screamDoc = await admin
+        .firestore()
+        .doc(`/screams/${req.params.screamId}`)
+        .get();
+    const screamData: any = screamDoc.data();
+
+    if (!screamDoc.exists) {
+        return res.status(404).json({ err: "Scream not found" });
+    }
+
+    if (likeDoc.empty) {
+        return res.status(400).json({ err: "Scream not liked" });
+    }
+
+    await admin.firestore().doc(`/likes/${likeDoc.docs[0].id}`).delete();
+
+    screamData.likeCount--;
+    await admin
+        .firestore()
+        .doc(`/screams/${req.params.screamId}`)
+        .update({ likeCount: screamData.likeCount });
+
+    return res.json(screamData);
+};
+
+export const deleteScream = async (req: Request, res: Response) => {
+    const screamDoc = await admin
+        .firestore()
+        .doc(`/screams/${req.params.screamId}`)
+        .get();
+
+    if (!screamDoc.exists) {
+        return res.json(404).json({ err: "Scream not found" });
+    }
+
+    if (screamDoc.data()?.userHandle !== req.user.handle) {
+        return res.status(403).json({ err: "Unauthorized" });
+    }
+
+    await screamDoc.ref.delete();
+    return res.json({ msg: "Successfully deleted" });
 };
