@@ -179,7 +179,8 @@ export const getAuthenticatedUser = async (req: Request, res: Response) => {
     if (doc.exists) {
         const userData: Record<string, any> = {
             credentials: doc.data(),
-            likes: []
+            likes: [],
+            notifications: []
         };
 
         const likes = await admin
@@ -192,8 +193,73 @@ export const getAuthenticatedUser = async (req: Request, res: Response) => {
             userData.likes.push(doc.data());
         });
 
+        const notifications = await admin
+            .firestore()
+            .collection("notifications")
+            .where("recipient", "==", req.user.handle)
+            .orderBy("createdAt", "desc")
+            .get();
+
+        notifications.forEach((doc) => {
+            userData.notifications.push({
+                notificationId: doc.id,
+                recipient: doc.data().recipient,
+                sender: doc.data().sender,
+                createdAt: doc.data().createdAt,
+                screamId: doc.data().screamId,
+                type: doc.data().type,
+                read: doc.data().read
+            });
+        });
+
         return res.json(userData);
     }
 
     return res.json(400).json({ err: "User not found" });
+};
+
+export const getUserDetails = async (req: Request, res: Response) => {
+    const userDetails: Record<string, any> = { screams: [] };
+
+    const userDoc = await admin
+        .firestore()
+        .doc(`/users/${req.params.handle}`)
+        .get();
+    if (!userDoc.exists) return res.status(404).json({ err: "User not found" });
+
+    userDetails.user = userDoc.data();
+
+    const userScreams = await admin
+        .firestore()
+        .collection("screams")
+        .where("userHandle", "==", req.params.handle)
+        .orderBy("createdAt", "desc")
+        .get();
+
+    userScreams.forEach((doc) => {
+        userDetails.screams.push({
+            screamId: doc.id,
+            body: doc.data().body,
+            userHandle: doc.data().userHandle,
+            userImage: doc.data().userImage,
+            likeCount: doc.data().likeCount,
+            commentCount: doc.data().commentCount,
+            createdAt: doc.data().createdAt
+        });
+    });
+
+    return res.json(userDetails);
+};
+
+export const markNotificationsRead = async (req: Request, res: Response) => {
+    const batch = admin.firestore().batch();
+    req.body.forEach((notificationID: string) => {
+        const notification = admin
+            .firestore()
+            .doc(`/notifications/${notificationID}`);
+        batch.update(notification, { read: true });
+    });
+
+    await batch.commit();
+    return res.json({ msg: "Successfully marked notifications read" });
 };
