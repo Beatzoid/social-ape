@@ -73,7 +73,10 @@ export const signup = async (req: Request, res: Response) => {
         if (err.code === "auth/email-already-in-use") {
             return res.status(400).json({ email: "Email already in use" });
         } else {
-            return res.status(500).json({ err: err.code });
+            functions.logger.error(err);
+            return res.status(500).json({
+                general: "Something went wrong, please try again later."
+            });
         }
     }
 };
@@ -98,168 +101,216 @@ export const login = async (req: Request, res: Response) => {
         return res.json({ token });
     } catch (err: any) {
         if (err.code === "auth/wrong-password") {
-            return res.status(403).json({ password: "Incorrect password" });
+            return res.status(403).json({ general: "Incorrect credentials" });
         } else {
-            return res.status(500).json({ err: err.code });
+            functions.logger.error(err);
+            return res.status(500).json({
+                general: "Something went wrong, please try again later"
+            });
         }
     }
 };
 
 export const uploadUserImage = async (req: Request, res: Response) => {
-    const busboy = BusBoy({ headers: req.headers });
-    let imageToUpload: Record<string, string> = {};
-    let imageFileName: string;
+    try {
+        const busboy = BusBoy({ headers: req.headers });
+        let imageToUpload: Record<string, string> = {};
+        let imageFileName: string;
 
-    await new Promise((resolve, reject) => {
-        busboy
-            .on("close", resolve)
-            .once("error", reject)
-            .on("file", (_, file, info) => {
-                const { filename, mimeType } = info;
-                if (mimeType !== "image/png" && mimeType !== "image/jpeg") {
-                    return res
-                        .status(400)
-                        .json({ err: "File type not allowed" });
-                }
+        await new Promise((resolve, reject) => {
+            busboy
+                .on("close", resolve)
+                .once("error", reject)
+                .on("file", (_, file, info) => {
+                    const { filename, mimeType } = info;
+                    if (mimeType !== "image/png" && mimeType !== "image/jpeg") {
+                        return res
+                            .status(400)
+                            .json({ err: "File type not allowed" });
+                    }
 
-                // my.image.png => .png
-                const imageExtension =
-                    filename.split(".")[filename.split(".").length - 1];
+                    // my.image.png => .png
+                    const imageExtension =
+                        filename.split(".")[filename.split(".").length - 1];
 
-                imageFileName = `${Math.round(
-                    Math.random() * 1000000000000000
-                )}.${imageExtension}`;
+                    imageFileName = `${Math.round(
+                        Math.random() * 1000000000000000
+                    )}.${imageExtension}`;
 
-                const filePath = path.join(os.tmpdir(), imageFileName);
+                    const filePath = path.join(os.tmpdir(), imageFileName);
 
-                imageToUpload = { filePath, mimeType };
-                file.pipe(fs.createWriteStream(filePath));
-                return;
-            })
-            .on("finish", async () => {
-                await admin
-                    .storage()
-                    .bucket()
-                    .upload(imageToUpload.filePath, {
-                        resumable: false,
-                        metadata: {
-                            metadata: { contentType: imageToUpload.mimeType }
-                        }
-                    });
+                    imageToUpload = { filePath, mimeType };
+                    file.pipe(fs.createWriteStream(filePath));
+                    return;
+                })
+                .on("finish", async () => {
+                    await admin
+                        .storage()
+                        .bucket()
+                        .upload(imageToUpload.filePath, {
+                            resumable: false,
+                            metadata: {
+                                metadata: {
+                                    contentType: imageToUpload.mimeType
+                                }
+                            }
+                        });
 
-                // eslint-disable-next-line max-len
-                const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.STORAGE_BUCKET}/o/${imageFileName}?alt=media`;
-                await admin
-                    .firestore()
-                    .doc(`/users/${req.user.handle}`)
-                    .update({ imageUrl });
+                    // eslint-disable-next-line max-len
+                    const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${process.env.STORAGE_BUCKET}/o/${imageFileName}?alt=media`;
+                    await admin
+                        .firestore()
+                        .doc(`/users/${req.user.handle}`)
+                        .update({ imageUrl });
 
-                return res.json({ msg: "Successfully uploaded image" });
-            })
-            .end(req.body);
-    });
+                    return res.json({ msg: "Successfully uploaded image" });
+                })
+                .end(req.body);
+        });
 
-    return res.status(200);
+        return res.status(200);
+    } catch (err: any) {
+        functions.logger.error(err);
+        return res
+            .status(500)
+            .json({ general: "Something went wrong, please try again later" });
+    }
 };
 
 export const addUserDetails = async (req: Request, res: Response) => {
-    const userDetails = reduceUserDetails(req.body);
+    try {
+        const userDetails = reduceUserDetails(req.body);
 
-    if (Object.keys(userDetails).length === 0) {
+        if (Object.keys(userDetails).length === 0) {
+            return res.json({ msg: "Updated successfully" });
+        }
+
+        await admin
+            .firestore()
+            .doc(`users/${req.user.handle}`)
+            .update(userDetails);
         return res.json({ msg: "Updated successfully" });
+    } catch (err: any) {
+        functions.logger.error(err);
+        return res
+            .status(500)
+            .json({ general: "Something went wrong, please try again later" });
     }
-
-    await admin.firestore().doc(`users/${req.user.handle}`).update(userDetails);
-    return res.json({ msg: "Updated successfully" });
 };
 
 export const getAuthenticatedUser = async (req: Request, res: Response) => {
-    const doc = await admin.firestore().doc(`/users/${req.user.handle}`).get();
-
-    if (doc.exists) {
-        const userData: Record<string, any> = {
-            credentials: doc.data(),
-            likes: [],
-            notifications: []
-        };
-
-        const likes = await admin
+    try {
+        const doc = await admin
             .firestore()
-            .collection("likes")
-            .where("userHandle", "==", req.user.handle)
+            .doc(`/users/${req.user.handle}`)
             .get();
 
-        likes.forEach((doc) => {
-            userData.likes.push(doc.data());
-        });
+        if (doc.exists) {
+            const userData: Record<string, any> = {
+                credentials: doc.data(),
+                likes: [],
+                notifications: []
+            };
 
-        const notifications = await admin
-            .firestore()
-            .collection("notifications")
-            .where("recipient", "==", req.user.handle)
-            .orderBy("createdAt", "desc")
-            .get();
+            const likes = await admin
+                .firestore()
+                .collection("likes")
+                .where("userHandle", "==", req.user.handle)
+                .get();
 
-        notifications.forEach((doc) => {
-            userData.notifications.push({
-                notificationId: doc.id,
-                recipient: doc.data().recipient,
-                sender: doc.data().sender,
-                createdAt: doc.data().createdAt,
-                screamId: doc.data().screamId,
-                type: doc.data().type,
-                read: doc.data().read
+            likes.forEach((doc) => {
+                userData.likes.push(doc.data());
             });
-        });
 
-        return res.json(userData);
+            const notifications = await admin
+                .firestore()
+                .collection("notifications")
+                .where("recipient", "==", req.user.handle)
+                .orderBy("createdAt", "desc")
+                .get();
+
+            notifications.forEach((doc) => {
+                userData.notifications.push({
+                    notificationId: doc.id,
+                    recipient: doc.data().recipient,
+                    sender: doc.data().sender,
+                    createdAt: doc.data().createdAt,
+                    screamId: doc.data().screamId,
+                    type: doc.data().type,
+                    read: doc.data().read
+                });
+            });
+
+            return res.json(userData);
+        }
+
+        return res.json(400).json({ err: "User not found" });
+    } catch (err: any) {
+        functions.logger.error(err);
+        return res
+            .status(500)
+            .json({ general: "Something went wrong, please try again later" });
     }
-
-    return res.json(400).json({ err: "User not found" });
 };
 
 export const getUserDetails = async (req: Request, res: Response) => {
-    const userDetails: Record<string, any> = { screams: [] };
+    try {
+        const userDetails: Record<string, any> = { screams: [] };
 
-    const userDoc = await admin
-        .firestore()
-        .doc(`/users/${req.params.handle}`)
-        .get();
-    if (!userDoc.exists) return res.status(404).json({ err: "User not found" });
+        const userDoc = await admin
+            .firestore()
+            .doc(`/users/${req.params.handle}`)
+            .get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ err: "User not found" });
+        }
 
-    userDetails.user = userDoc.data();
+        userDetails.user = userDoc.data();
 
-    const userScreams = await admin
-        .firestore()
-        .collection("screams")
-        .where("userHandle", "==", req.params.handle)
-        .orderBy("createdAt", "desc")
-        .get();
+        const userScreams = await admin
+            .firestore()
+            .collection("screams")
+            .where("userHandle", "==", req.params.handle)
+            .orderBy("createdAt", "desc")
+            .get();
 
-    userScreams.forEach((doc) => {
-        userDetails.screams.push({
-            screamId: doc.id,
-            body: doc.data().body,
-            userHandle: doc.data().userHandle,
-            userImage: doc.data().userImage,
-            likeCount: doc.data().likeCount,
-            commentCount: doc.data().commentCount,
-            createdAt: doc.data().createdAt
+        userScreams.forEach((doc) => {
+            userDetails.screams.push({
+                screamId: doc.id,
+                body: doc.data().body,
+                userHandle: doc.data().userHandle,
+                userImage: doc.data().userImage,
+                likeCount: doc.data().likeCount,
+                commentCount: doc.data().commentCount,
+                createdAt: doc.data().createdAt
+            });
         });
-    });
 
-    return res.json(userDetails);
+        return res.json(userDetails);
+    } catch (err: any) {
+        functions.logger.error(err);
+        return res
+            .status(500)
+            .json({ general: "Something went wrong, please try again later" });
+    }
 };
 
 export const markNotificationsRead = async (req: Request, res: Response) => {
-    const batch = admin.firestore().batch();
-    req.body.forEach((notificationID: string) => {
-        const notification = admin
-            .firestore()
-            .doc(`/notifications/${notificationID}`);
-        batch.update(notification, { read: true });
-    });
+    try {
+        const batch = admin.firestore().batch();
+        req.body.forEach((notificationID: string) => {
+            const notification = admin
+                .firestore()
+                .doc(`/notifications/${notificationID}`);
+            batch.update(notification, { read: true });
+        });
 
-    await batch.commit();
-    return res.json({ msg: "Successfully marked notifications read" });
+        await batch.commit();
+        return res.json({ msg: "Successfully marked notifications read" });
+    } catch (err: any) {
+        functions.logger.error(err);
+        return res
+            .status(500)
+            .json({ general: "Something went wrong, please try again later" });
+    }
 };
