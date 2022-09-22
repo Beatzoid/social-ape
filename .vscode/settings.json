@@ -10,5 +10,5 @@
         "**/node_modules": true,
         "**/lib": true
     },
-    "cSpell.words": ["firestore"]
+    "cSpell.words": ["firestore", "Signup"]
 }
